@@ -1,0 +1,303 @@
+langchain_tools:
+
+1. llm can do reasoning(think) and give answer(speak) but can do task like: get live data, do reliable math, run code, interact with a database etc for that we need a function that do the job so llm calls that function now task can be done which is called tool. Def: tool is a python function that is packaged in a way the llm can understand and call when needed
+
+2. types:
+	1. builtin tools, 2. custom tools 
+
+3. AGENT: llm + tools is called agent : an AI agent is an llm powered system that can automatically think and decide and take actions using external tools or apis to achieve the goal.
+
+ex: IN built Tools: 1.PythonREPLTool : run raw python code
+2.shellTool: run shell commands
+3. RequestsGetTool : make HTTp GET requests
+4. 4sqldatabasequerytool : run sql queries
+5. GmailSendMessageTool : send emails via gmail
+
+custom Tools:
+1. decorator tool
+ex: 
+@tool
+def multiply(a: int, b:int) -> int:
+    """Multiply two numbers"""
+    return a*b
+result = multiply.invoke({"a":3, "b":5})
+
+2. structured tool- : gives pydantic validation
+
+from langchain.tools import StructuredTool
+from pydantic import BaseModel, Field
+class MultiplyInput(BaseModel):
+    a: int = Field(required=True, description="The first number to add")
+    b: int = Field(required=True, description="The second number to add")
+
+def multiply_func(a: int, b: int) -> int:
+    return a * b
+
+multiply_tool = StructuredTool.from_function(
+    func=multiply_func,
+    name="multiply",
+    description="Multiply two numbers",
+    args_schema=MultiplyInput
+)
+
+result = multiply_tool.invoke({'a':3, 'b':3})
+
+print(result)
+print(multiply_tool.name)
+print(multiply_tool.description)
+print(multiply_tool.args)
+
+3. baseTool: 
+
+from langchain.tools import BaseTool
+from typing import Type
+# arg schema using pydantic
+
+class MultiplyInput(BaseModel):
+    a: int = Field(required=True, description="The first number to add")
+    b: int = Field(required=True, description="The second number to add")
+
+class MultiplyTool(BaseTool):
+    name: str = "multiply"
+    description: str = "Multiply two numbers"
+
+    args_schema: Type[BaseModel] = MultiplyInput
+
+    def _run(self, a: int, b: int) -> int:
+        return a * b
+
+multiply_tool = MultiplyTool()
+
+result = multiply_tool.invoke({'a':3, 'b':3})
+
+print(result)
+print(multiply_tool.name)
+print(multiply_tool.description)
+
+print(multiply_tool.args)
+
+
+ToolKits:
+
+if on a usecase multiple tools needed we can club all the tools, collection of tools that serves common purpose.
+
+from langchain_core.tools import tool
+
+# Custom tools
+@tool
+def add(a: int, b: int) -> int:
+    """Add two numbers"""
+    return a + b
+
+@tool
+def multiply(a: int, b: int) -> int:
+    """Multiply two numbers"""
+    return a * b
+
+class MathToolkit:
+    def get_tools(self):
+        return [add, multiply]
+
+toolkit = MathToolkit()
+tools = toolkit.get_tools()
+
+for tool in tools:
+    print(tool.name, "=>", tool.description)
+
+
+TOOL BINDING:
+It is the step where you register tools with a language modelso that llm knows
+1. what tools are available
+2. what tool does what (via description)
+3.what input format to use(via schema)
+
+llm_with_tools = llm.bind_tools([multiply])
+
+llm_with_tools.invoke('Hi how are you')
+
+ans: AIMessage(content="Hello! I'm here and ready to assist you. How can I help you today?", additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 20, 'prompt_tokens': 58, 'total_tokens': 78, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_name': 'gpt-3.5-turbo-0125', 'system_fingerprint': None, 'id': 'chatcmpl-BR8rNpETFpqE6bIK5rNVUiydjkzv4', 'finish_reason': 'stop', 'logprobs': None}, id='run-325a9e76-6f20-4c7b-93ac-4740de7b21da-0', usage_metadata={'input_tokens': 58, 'output_tokens': 20, 'total_tokens': 78, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})
+
+without tool bind :
+llm = ChatOpenAI()
+llm.invole('hi')
+AIMessage(content='Hello! How can I assist you today?', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 10, 'prompt_tokens': 8, 'total_tokens': 18, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_name': 'gpt-3.5-turbo-0125', 'system_fingerprint': None, 'id': 'chatcmpl-BResLpj5UzPzVQzWgSzajRTxU9BLE', 'finish_reason': 'stop', 'logprobs': None}, id='run-d0e26fe4-f02b-4ccc-9462-c02151ce7943-0', usage_metadata={'input_tokens': 8, 'output_tokens': 10, 'total_tokens': 18, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})
+
+
+llm_with_tools.invoke('can you multiply 3 with 10')
+
+ans: has tools_calls list
+
+llm_with_tools.invoke('can you multiply 3 with 10').tool_calls[0]
+
+
+
+--------------------------------------------
+Tool Execution:
+------------------
+result = llm_with_tools.invoke('can you multiply 3 with 10')
+multipy.invoe(result.tool_calls[0])   ----> gives ToolMesaage
+ToolMessage(contet='30',name='multiply',tool_call_id='')
+
+-----------------
+# to send tool message to llm
+
+query = HumanMessage('can you multiply 3 with 1000')
+
+messages=[query]
+
+messages
+ans: [HumanMessage(content='can you multiply 3 with 1000', additional_kwargs={}, response_metadata={})]
+
+result= llm_with_tools.invoke(messages)
+
+messages.append(result)
+
+messages
+
+ans: [HumanMessage(content='can you multiply 3 with 1000', additional_kwargs={}, response_metadata={}),
+ AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_RxxH1pPDylDECUwpRe7MXkJi', 'function': {'arguments': '{"a":3,"b":1000}', 'name': 'multiply'}, 'type': 'function'}], 'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 19, 'prompt_tokens': 63, 'total_tokens': 82, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_name': 'gpt-3.5-turbo-0125', 'system_fingerprint': None, 'id': 'chatcmpl-BR8rS3DNc8cckcVLJMmBDxHENKUlV', 'finish_reason': 'tool_calls', 'logprobs': None}, id='run-8035ac83-7820-4681-b8c0-1d15aa24ca77-0', tool_calls=[{'name': 'multiply', 'args': {'a': 3, 'b': 1000}, 'id': 'call_RxxH1pPDylDECUwpRe7MXkJi', 'type': 'tool_call'}], usage_metadata={'input_tokens': 63, 'output_tokens': 19, 'total_tokens': 82, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]
+
+
+tool_result = multiply.invoke(result.tool_calls[0])
+
+messages.append(tool_result)
+
+messages -----> gives HummanMessage,AIMessage,ToolMessage
+
+[HumanMessage(content='can you multiply 3 with 1000', additional_kwargs={}, response_metadata={}),
+ AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_RxxH1pPDylDECUwpRe7MXkJi', 'function': {'arguments': '{"a":3,"b":1000}', 'name': 'multiply'}, 'type': 'function'}], 'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 19, 'prompt_tokens': 63, 'total_tokens': 82, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_name': 'gpt-3.5-turbo-0125', 'system_fingerprint': None, 'id': 'chatcmpl-BR8rS3DNc8cckcVLJMmBDxHENKUlV', 'finish_reason': 'tool_calls', 'logprobs': None}, id='run-8035ac83-7820-4681-b8c0-1d15aa24ca77-0', tool_calls=[{'name': 'multiply', 'args': {'a': 3, 'b': 1000}, 'id': 'call_RxxH1pPDylDECUwpRe7MXkJi', 'type': 'tool_call'}], usage_metadata={'input_tokens': 63, 'output_tokens': 19, 'total_tokens': 82, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}}),
+ ToolMessage(content='3000', name='multiply', tool_call_id='call_RxxH1pPDylDECUwpRe7MXkJi')]
+
+llm_with_tools.invoke(messages).content
+
+ans:The product of 3 and 1000 is 3000.
+
+
+EXAMPLE PROJECT:
+
+# tool create
+from langchain_core.tools import InjectedToolArg
+from typing import Annotated
+
+@tool
+def get_conversion_factor(base_currency: str, target_currency: str) -> float:
+  """
+  This function fetches the currency conversion factor between a given base currency and a target currency
+  """
+  url = f'https://v6.exchangerate-api.com/v6/c754eab14ffab33112e380ca/pair/{base_currency}/{target_currency}'
+
+  response = requests.get(url)
+
+  return response.json()
+
+@tool
+def convert(base_currency_value: int, conversion_rate: Annotated[float, InjectedToolArg]) -> float:
+  """
+  given a currency conversion rate this function calculates the target currency value from a given base currency value
+  """
+
+  return base_currency_value * conversion_rate
+
+# here we have used InjectedToolArg for conversionrate which makes user to give value by this it will understand and llm does not hallucinate to give value
+convert.args
+ans:
+{'base_currency_value': {'title': 'Base Currency Value', 'type': 'integer'},
+ 'conversion_rate': {'title': 'Conversion Rate', 'type': 'number'}}
+
+get_conversion_factor.invoke({'base_currency':'USD','target_currency':'INR'})
+
+ans:
+{'result': 'success',
+ 'documentation': 'https://www.exchangerate-api.com/docs',
+ 'terms_of_use': 'https://www.exchangerate-api.com/terms',
+ 'time_last_update_unix': 1745798401,
+ 'time_last_update_utc': 'Mon, 28 Apr 2025 00:00:01 +0000',
+ 'time_next_update_unix': 1745884801,
+ 'time_next_update_utc': 'Tue, 29 Apr 2025 00:00:01 +0000',
+ 'base_code': 'USD',
+ 'target_code': 'INR',
+ 'conversion_rate': 85.4741}
+
+convert.invoke({'base_currency_value':10, 'conversion_rate':85.16})
+ans:851.599999
+
+# tool binding
+llm = ChatOpenAI()
+
+llm_with_tools = llm.bind_tools([get_conversion_factor, convert])
+
+messages = [HumanMessage('What is the conversion factor between INR and USD, and based on that can you convert 10 inr to usd')]
+
+messages
+ans:
+[HumanMessage(content='What is the conversion factor between INR and USD, and based on that can you convert 10 inr to usd', additional_kwargs={}, response_metadata={})]
+
+ai_message = llm_with_tools.invoke(messages)
+
+messages.append(ai_message)
+
+ai_message.tool_calls
+#### here we created injected
+ans:
+[{'name': 'get_conversion_factor',
+  'args': {'base_currency': 'INR', 'target_currency': 'USD'},
+  'id': 'call_PKL8v7zwmphzNel0MnvjjGvY',
+  'type': 'tool_call'},
+ {'name': 'convert',
+  'args': {'base_currency_value': 10},
+  'id': 'call_vRdld30yHTKFGcTQPumgzH5u',
+  'type': 'tool_call'}]
+
+import json
+
+for tool_call in ai_message.tool_calls:
+  # execute the 1st tool and get the value of conversion rate
+  if tool_call['name'] == 'get_conversion_factor':
+    tool_message1 = get_conversion_factor.invoke(tool_call)
+    # fetch this conversion rate
+    conversion_rate = json.loads(tool_message1.content)['conversion_rate']
+    # append this tool message to messages list
+    messages.append(tool_message1)
+  # execute the 2nd tool using the conversion rate from tool 1
+  if tool_call['name'] == 'convert':
+    # fetch the current arg
+    tool_call['args']['conversion_rate'] = conversion_rate
+    tool_message2 = convert.invoke(tool_call)
+    messages.append(tool_message2)
+
+messages
+
+ans:
+[HumanMessage(content='What is the conversion factor between INR and USD, and based on that can you convert 10 inr to usd', additional_kwargs={}, response_metadata={}),
+ AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_PKL8v7zwmphzNel0MnvjjGvY', 'function': {'arguments': '{"base_currency": "INR", "target_currency": "USD"}', 'name': 'get_conversion_factor'}, 'type': 'function'}, {'id': 'call_vRdld30yHTKFGcTQPumgzH5u', 'function': {'arguments': '{"base_currency_value": 10}', 'name': 'convert'}, 'type': 'function'}], 'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 53, 'prompt_tokens': 123, 'total_tokens': 176, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_name': 'gpt-3.5-turbo-0125', 'system_fingerprint': None, 'id': 'chatcmpl-BR8rovupYuNnIbGO41TOO3knQ2Cr9', 'finish_reason': 'tool_calls', 'logprobs': None}, id='run-5ee0506a-8be8-4d32-8f30-f939d59b11a8-0', tool_calls=[{'name': 'get_conversion_factor', 'args': {'base_currency': 'INR', 'target_currency': 'USD'}, 'id': 'call_PKL8v7zwmphzNel0MnvjjGvY', 'type': 'tool_call'}, {'name': 'convert', 'args': {'base_currency_value': 10, 'conversion_rate': 0.0117}, 'id': 'call_vRdld30yHTKFGcTQPumgzH5u', 'type': 'tool_call'}], usage_metadata={'input_tokens': 123, 'output_tokens': 53, 'total_tokens': 176, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}}),
+ ToolMessage(content='{"result": "success", "documentation": "https://www.exchangerate-api.com/docs", "terms_of_use": "https://www.exchangerate-api.com/terms", "time_last_update_unix": 1745798401, "time_last_update_utc": "Mon, 28 Apr 2025 00:00:01 +0000", "time_next_update_unix": 1745884801, "time_next_update_utc": "Tue, 29 Apr 2025 00:00:01 +0000", "base_code": "INR", "target_code": "USD", "conversion_rate": 0.0117}', name='get_conversion_factor', tool_call_id='call_PKL8v7zwmphzNel0MnvjjGvY'),
+ ToolMessage(content='0.117', name='convert', tool_call_id='call_vRdld30yHTKFGcTQPumgzH5u')]
+
+
+llm_with_tools.invoke(messages).content
+
+The conversion factor between INR and USD is 0.0117. 
+
+Based on this conversion factor, 10 INR is equal to 0.117 USD.
+
+from langchain.agents import initialize_agent, AgentType
+
+# Step 5: Initialize the Agent ---
+agent_executor = initialize_agent(
+    tools=[get_conversion_factor, convert],
+    llm=llm,
+    agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,  # using ReAct pattern
+    verbose=True  # shows internal thinking
+)
+
+
+# --- Step 6: Run the Agent ---
+user_query = "Hi how are you?"
+
+response = agent_executor.invoke({"input": user_query})
+
+
+
+
+
+
